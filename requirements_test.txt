@@ -3,6 +3,6 @@
 # new version
 flake8-docstrings==1.6.0
 flake8==3.7.8
-pydocstyle==6.0.0
+pydocstyle==6.1.1
 pylint==2.4.4
 async_generator
