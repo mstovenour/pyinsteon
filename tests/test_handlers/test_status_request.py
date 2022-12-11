@@ -17,15 +17,13 @@ class TestStatusRequest(unittest.TestCase):
         self._status = None
         self._db_version_1 = None
         self._status_1 = None
-        self.status_command = StatusRequestCommand(self._address, status_type=0)
-        self.status_command.subscribe(self.set_status)
-        self.ack_topic = "ack.{}.status_request.direct".format(self._address.id)
-        self.direct_ack_topic = "{}.any_topic.direct_ack".format(self._address.id)
+        self.ack_topic = f"ack.{self._address.id}.status_request.direct"
+        self.direct_ack_topic = f"{self._address.id}.any_topic.direct_ack"
         set_log_levels(
-            logger="info",
+            logger="debug",
             logger_pyinsteon="info",
             logger_messages="info",
-            logger_topics=False,
+            logger_topics=True,
         )
 
     def set_status(self, db_version, status):
@@ -41,13 +39,17 @@ class TestStatusRequest(unittest.TestCase):
     @async_case
     async def test_status_command(self):
         """Test Status Request command."""
+        self.status_command = StatusRequestCommand(self._address, status_type=0)
+        self.status_command.subscribe(self.set_status)
         cmd1 = 0x19
         cmd2 = 0x00
         db_version = 0x22
         status = 0x33
         topics = [
             TopicItem(
-                self.ack_topic, {"cmd1": cmd1, "cmd2": cmd2, "user_data": None}, 0.5
+                self.ack_topic,
+                {"cmd1": cmd1, "cmd2": cmd2, "user_data": None},
+                0.5,
             ),
             TopicItem(
                 self.direct_ack_topic,
@@ -73,13 +75,17 @@ class TestStatusRequest(unittest.TestCase):
 
         This starts with an ACK message rather than a send() command.
         """
+        self.status_command = StatusRequestCommand(self._address, status_type=0)
+        self.status_command.subscribe(self.set_status)
         cmd1 = 0x19
         cmd2 = 0x00
         db_version = 0x44
         status = 0x55
         topics = [
             TopicItem(
-                self.ack_topic, {"cmd1": cmd1, "cmd2": cmd2, "user_data": None}, 0.1
+                self.ack_topic,
+                {"cmd1": cmd1, "cmd2": cmd2, "user_data": None},
+                0.1,
             ),
             TopicItem(
                 self.direct_ack_topic,
@@ -101,6 +107,8 @@ class TestStatusRequest(unittest.TestCase):
     @async_case
     async def test_other_status(self):
         """Test other status command and confirm first handler does not handle."""
+        self.status_command = StatusRequestCommand(self._address, status_type=0)
+        self.status_command.subscribe(self.set_status)
         status_type = 1
         status_1_command = StatusRequestCommand(self._address, status_type=status_type)
         status_1_command.subscribe(self.set_status_1)
@@ -110,7 +118,9 @@ class TestStatusRequest(unittest.TestCase):
         status = 0x77
         topics = [
             TopicItem(
-                self.ack_topic, {"cmd1": cmd1, "cmd2": cmd2, "user_data": None}, 0.5
+                self.ack_topic,
+                {"cmd1": cmd1, "cmd2": cmd2, "user_data": None},
+                0.1,
             ),
             TopicItem(
                 self.direct_ack_topic,
@@ -121,16 +131,20 @@ class TestStatusRequest(unittest.TestCase):
                     "user_data": None,
                     "hops_left": 3,
                 },
-                0.5,
+                0.1,
             ),
         ]
+        self.set_status(-1, -1)
+        self.set_status_1(-2, -2)
         send_topics(topics)
         assert await status_1_command.async_send()
-        await asyncio.sleep(1)
+
         assert self._db_version_1 == db_version
         assert self._status_1 == status
-        assert self._db_version is None
-        assert self._status is None
+
+        # Confirm status 1 did not respond.
+        assert self._status == -1
+        assert self._db_version == -1
 
 
 if __name__ == "__main__":

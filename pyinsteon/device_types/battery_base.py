@@ -8,6 +8,7 @@ from inspect import getfullargspec
 from ..aldb.aldb_battery import ALDBBattery
 from ..constants import ResponseStatus
 from ..handlers.to_device.extended_set import ExtendedSetCommand
+from ..managers.link_manager.default_links import async_add_default_links
 from ..utils import subscribe_topic
 from ..topics import (
     ALL_LINK_CLEANUP_FAILURE_REPORT,
@@ -45,20 +46,21 @@ class BatteryDeviceBase:
         self._last_run = None
         self._keep_awake_cmd = ExtendedSetCommand(self._address, data1=0, data2=0x04)
         subscribe_topic(self._device_awake, self._address.id)
-        self._ping_task = None
-        # This may or may not make sense.
-        # It it helps to set default links when the device first connect,
-        # then this probably makes sense.
-        asyncio.ensure_future(self.async_keep_awake())
+        self._ping_task: asyncio.Task = None
 
     def _run_on_wake(self, command, retries=3, **kwargs):
         _LOGGER.debug("Queuing command for battery device YAY")
         _LOGGER.debug(str(command))
         cmd = partial(command, **kwargs)
         self._commands_queue.put_nowait((cmd, retries))
-        if not self._ping_task:
+        if not self._ping_task or self._ping_task.done() or self._ping_task.cancelled():
             self._ping_task = asyncio.ensure_future(self._ping_device())
+            self._ping_task.add_done_callback(self._clear_ping_task)
         return ResponseStatus.RUN_ON_WAKE
+
+    def _clear_ping_task(self, *args, **kwargs):
+        """Clear the ping task."""
+        self._ping_task = None
 
     def close(self):
         """Close the command listener."""
@@ -95,17 +97,22 @@ class BatteryDeviceBase:
 
     async def async_add_default_links(self):
         """Add default links to the device."""
-        return self._run_on_wake(super(BatteryDeviceBase, self).async_add_default_links)
+        return self._run_on_wake(self.async_add_default_links_on_wake)
 
-    async def async_read_config(self):
-        """Get all configuration settings.
+    async def async_add_default_links_on_wake(self):
+        """Add default links to the device when the device wakes up."""
+        aldb_write_save = self.aldb.async_write
+        aldb_load_save = self.aldb.async_load
+        self.aldb.async_write = self.aldb.async_write_on_wake
+        self.aldb.async_load = self.aldb.async_load_on_wake
 
-        This includes:
-        - Operating flags
-        - Extended properties
-        - All-Link Database records.
-        """
-        return self._run_on_wake(super(BatteryDeviceBase, self).async_add_default_links)
+        result = ResponseStatus.FAILURE
+        try:
+            result = await async_add_default_links(self)
+        finally:
+            self.aldb.async_write = aldb_write_save
+            self.aldb.async_load = aldb_load_save
+        return result
 
     async def async_read_product_id(self):
         """Get the product ID."""
@@ -164,6 +171,7 @@ class BatteryDeviceBase:
         retry_cmds = []
         while True:
             try:
+                await self.async_keep_awake()
                 command, retries = await asyncio.wait_for(
                     self._commands_queue.get(), TIMEOUT
                 )

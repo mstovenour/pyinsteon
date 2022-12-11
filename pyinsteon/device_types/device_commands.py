@@ -15,6 +15,7 @@ OFF_HEARTBEAT_INBOUND = "off_heartbeat_inbound"
 STATUS_COMMAND = "status_command"
 STATUS_COMMAND_HUB = "status_command_hub"
 STATUS_COMMAND_FAN = "status_command_fan"
+STATUS_COMMAND_LOAD = "status_command_load"
 
 ON_COMMAND = "on_command"
 OFF_COMMAND = "off_command"
@@ -33,3 +34,4 @@ TRIGGER_SCENE_ON_COMMAND = "trigger_scene_on"
 TRIGGER_SCENE_OFF_COMMAND = "trigger_scene_off"
 
 GET_IM_CONFIG_COMMAND = "get_im_config"
+SET_IM_CONFIG_COMMAND = "set_im_config"

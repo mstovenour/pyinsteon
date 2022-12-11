@@ -22,7 +22,7 @@ should be usable for other applications as well.
 Requirements
 ------------
 
--  Python 3.6, 3.7, 3.8 or 3.9
+-  Python 3.7, 3.8 3.9 or 3.10
 -  Posix or Windows based system
 -  Some form of Insteon PLM or Hub
 -  At least one Insteon device
@@ -46,8 +46,8 @@ git repository and install from local sources:
 
     cd pyinsteon
     pip install .
-.. |Build status| image:: https://dev.azure.com/pyinsteon/pyinsteon/_apis/build/status/pyinsteon.pyinsteon?branchName=master
-    :target: https://dev.azure.com/pyinsteon/pyinsteon/_build/latest?definitionId=1&branchName=master
+.. |Build status| image:: https://dev.azure.com/pyinsteon/pyinsteon/_apis/build/status/pyinsteon.pyinsteon?branchName=main
+    :target: https://dev.azure.com/pyinsteon/pyinsteon/_build/latest?definitionId=1&branchName=main
 .. |GitHub release| image:: https://img.shields.io/github/release/pyinsteon/pyinsteon.svg
    :target: https://github.com/pyinsteon/pyinsteon/releases
 .. |PyPI| image:: https://img.shields.io/pypi/v/pyinsteon.svg

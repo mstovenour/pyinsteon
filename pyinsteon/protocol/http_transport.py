@@ -1,8 +1,7 @@
 """HTTP Transport  for asyncio."""
 import asyncio
 import logging
-from binascii import unhexlify
-from contextlib import suppress
+from binascii import Error, Incomplete, unhexlify
 
 import aiohttp
 
@@ -23,6 +22,7 @@ async def async_connect_http(host, username, password, protocol, port=None):
         protocol=protocol, host=host, port=port, username=username, password=password
     )
     if await transport.async_test_connection():
+        _LOGGER.debug("Connection made async_connect_http")
         transport.start_reader()
         protocol.connection_made(transport)
         return transport
@@ -58,10 +58,16 @@ class HttpTransport(asyncio.Transport):
         self._reader_writer = HttpReaderWriter(self._auth)
 
         self._closing = False
+        self._reader_lock = asyncio.Lock()
         self._read_write_lock = asyncio.Lock()
         self._last_read = asyncio.Queue()
         self._last_msg = None
         self._reader_task = None
+
+    @property
+    def write_wait(self):
+        """Return the time to wait between writes."""
+        return 0.5
 
     def abort(self):
         """Alternative to closing the transport."""
@@ -94,7 +100,7 @@ class HttpTransport(asyncio.Transport):
 
     def resume_reading(self):
         """Resume the reader."""
-        self._start_reader()
+        self.start_reader()
 
     def set_write_buffer_limits(self, high=None, low=None):
         """Not implemented."""
@@ -111,7 +117,8 @@ class HttpTransport(asyncio.Transport):
 
     def start_reader(self):
         """Start the reader."""
-        if self._reader_task is None:
+        if not self._reader_lock.locked():
+            self._closing = False
             self._start_reader()
 
     async def _async_write_url(self, url, msg=None):
@@ -121,8 +128,6 @@ class HttpTransport(asyncio.Transport):
             retry = 0
             while response_status != 200 and retry < 5:
                 if self.is_closing():
-                    if self._read_write_lock.locked():
-                        self._read_write_lock.release()
                     return
                 response_status = await self._reader_writer.async_write(url)
                 if response_status != 200:
@@ -134,7 +139,7 @@ class HttpTransport(asyncio.Transport):
 
     async def async_test_connection(self):
         """Test the connection to the hub."""
-        url = "http://{:s}:{:d}/buffstatus.xml".format(self._host, self._port)
+        url = f"http://{self._host}:{self._port}/buffstatus.xml"
         response = await self._reader_writer.async_test_connection(url)
         if not response:
             self.close()
@@ -150,7 +155,7 @@ class HttpTransport(asyncio.Transport):
 
     async def _clear_buffer(self):
         _LOGGER.debug("..................Clearing the buffer..............")
-        url = "http://{:s}:{:d}/1?XB=M=1".format(self._host, self._port)
+        url = f"http://{self._host}:{self._port}/1?XB=M=1"
         await self._async_write_url(url)
 
     # pylint: disable=broad-except
@@ -158,40 +163,51 @@ class HttpTransport(asyncio.Transport):
         _LOGGER.info("Insteon Hub reader started")
         await self._clear_buffer()
         await self._reader_writer.reset_reader()
-        url = "http://{:s}:{:d}/buffstatus.xml".format(self._host, self._port)
+        url = f"http://{self._host}:{self._port}/buffstatus.xml"
         retry = 0
-        while not self._closing:
-            buffer = None
-            async with self._read_write_lock:
-                try:
-                    buffer = await self._reader_writer.async_read(url)
-                except HubConnectionException:
-                    retry += 1
-                    _LOGGER.debug("Connection retry: %d", retry)
-                    await asyncio.sleep(RECONNECT_WAIT)
-                    if retry >= SESSION_RETRIES:
-                        _LOGGER.error(
-                            "Closing connection Hub after %d retries", SESSION_RETRIES
-                        )
+        async with self._reader_lock:
+            while not self._closing:
+                buffer = None
+                async with self._read_write_lock:
+                    try:
+                        buffer = await self._reader_writer.async_read(url)
+                    except HubConnectionException:
+                        retry += 1
+                        _LOGGER.debug("Connection retry: %d", retry)
+                        await asyncio.sleep(RECONNECT_WAIT)
+                        if retry >= SESSION_RETRIES:
+                            _LOGGER.error(
+                                "Closing connection Hub after %d retries",
+                                SESSION_RETRIES,
+                            )
+                            self.close()
+
+                    except (asyncio.CancelledError, GeneratorExit) as ex:
+                        _LOGGER.debug("Stop connection to Hub: %s", ex)
                         self.close()
 
-                except (asyncio.CancelledError, GeneratorExit) as ex:
-                    _LOGGER.debug("Stop connection to Hub: %s", ex)
-                    self.close()
-
-                else:
-                    retry = 0
-                    if buffer:
-                        _LOGGER.debug("New buffer: %s", buffer)
-                        buffer = self._check_strong_nak(buffer)
-                        bin_buffer = unhexlify(buffer)
-                        self._protocol.data_received(bin_buffer)
-            if not self.is_closing():
-                await asyncio.sleep(READ_WAIT)
+                    else:
+                        retry = 0
+                        if buffer:
+                            _LOGGER.debug("New buffer: %s", buffer)
+                            buffer = self._check_strong_nak(buffer)
+                            try:
+                                bin_buffer = unhexlify(buffer)
+                            except (Error, Incomplete):
+                                _LOGGER.warning("Invalid buffer: %s", buffer)
+                            else:
+                                self._protocol.data_received(bin_buffer)
+                if not self._closing:
+                    await asyncio.sleep(READ_WAIT)
         _LOGGER.info("Insteon Hub reader stopped")
 
+    def _reader_closed_callback(self, exc):
+        """Call when the reader closes."""
+        self._closing = True
+        self._protocol.connection_lost(exc)
+
     def _check_strong_nak(self, buffer):
-        """Check if a NAK message is received with multiple NAKs.
+        """Check if a NAK message is received with multiple `NAKs`.
 
         There appears to be a bug in the Hub that produces a series
         of NAK codes rather than returning the original message
@@ -207,15 +223,11 @@ class HttpTransport(asyncio.Transport):
         _LOGGER.debug("Starting the buffer reader")
         if not self._closing:
             self._reader_task = asyncio.ensure_future(self._ensure_reader())
-            self._reader_task.add_done_callback(self._protocol.connection_lost)
+            self._reader_task.add_done_callback(self._reader_closed_callback)
 
     async def _stop_reader(self, reconnect=False):
         _LOGGER.debug("Stopping the reader and reconnect is %s", reconnect)
         self.close()
-        if self._reader_task:
+        if self._reader_lock.locked():
             if not reconnect:
-                self._reader_task.remove_done_callback(self._protocol.connection_lost)
-            self._reader_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._reader_task
-                await asyncio.sleep(0)
+                self._reader_task.remove_done_callback(self._reader_closed_callback)

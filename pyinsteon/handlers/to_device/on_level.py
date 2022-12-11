@@ -1,7 +1,6 @@
 """Manage outbound ON command to a device."""
 
 from ...topics import ON
-from .. import direct_ack_handler
 from .direct_command import DirectCommandHandlerBase
 
 
@@ -18,18 +17,10 @@ class OnLevelCommand(DirectCommandHandlerBase):
         return self._group
 
     # pylint: disable=arguments-differ
-    def send(self, on_level=0xFF):
-        """Send the ON command."""
-        super().send(on_level=on_level)
-
-    # pylint: disable=arguments-differ
     async def async_send(self, on_level=0xFF):
         """Send the ON command async."""
         return await super().async_send(on_level=on_level, group=self._group)
 
-    @direct_ack_handler
-    def handle_direct_ack(self, cmd1, cmd2, target, user_data, hops_left):
-        """Handle the ON response direct ACK."""
-        if self._response_lock.locked():
-            self._call_subscribers(on_level=cmd2 if cmd2 else 0xFF)
-        super().handle_direct_ack(cmd1, cmd2, target, user_data, hops_left)
+    def _update_subscribers_on_ack(self, cmd1, cmd2, target, user_data, hops_left):
+        """Update subscribers."""
+        self._call_subscribers(on_level=cmd2 if cmd2 else 0xFF)

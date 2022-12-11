@@ -1,12 +1,8 @@
 """Handle sending a read request for ALDB records."""
-import logging
 
 from ...address import Address
 from ...topics import GET_OPERATING_FLAGS
-from .. import direct_ack_handler
 from .direct_command import DirectCommandHandlerBase
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class GetOperatingFlagsCommand(DirectCommandHandlerBase):
@@ -18,19 +14,17 @@ class GetOperatingFlagsCommand(DirectCommandHandlerBase):
         self._group = None
 
     # pylint: disable=arguments-differ
-    def send(self, flags_requested=0):
-        """Send Get Operating Flags message."""
-        super().send(flags_requested=flags_requested)
-
-    # pylint: disable=arguments-differ
-    async def async_send(self, flags_requested=0):
+    async def async_send(self, flags_requested=0, extended=False):
         """Send Get Operating Flags message asyncronously."""
         self._group = flags_requested
-        return await super().async_send(flags_requested=self._group)
+        return await super().async_send(flags_requested=self._group, extended=extended)
 
-    @direct_ack_handler
-    def handle_direct_ack(self, cmd1, cmd2, target, user_data, hops_left):
-        """Handle the direct ACK message."""
-        self._call_subscribers(group=self._group, flags=cmd2)
+    def _update_subscribers_on_ack(self, cmd1, cmd2, target, user_data, hops_left):
+        """Update subscribers."""
+        self._call_subscribers(group=self._group, flags=cmd2, response=0)
         self._group = None
-        super().handle_direct_ack(cmd1, cmd2, target, user_data, hops_left)
+
+    def _update_subscribers_on_nak(self, cmd1, cmd2, target, user_data, hops_left):
+        """Update subscribers on DIRECT NAK received."""
+        self._call_subscribers(group=self._group, flags=None, response=cmd2)
+        self._group = None

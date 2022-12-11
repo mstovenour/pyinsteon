@@ -53,7 +53,7 @@ class HttpReaderWriter:
                                 return True
                             _log_error(response.status)
         except asyncio.TimeoutError:
-            _LOGGER.error("An aiohttp timeout error occured during test connection.")
+            _LOGGER.error("An aiohttp timeout error occurred during test connection.")
         except ClientError as exc:
             _LOGGER.error("An client error occurred: %s", str(exc))
         return False
@@ -72,7 +72,7 @@ class HttpReaderWriter:
                         else:
                             _log_error(response.status)
                             raise HubConnectionException(
-                                "Connection status error: {}".format(response.status)
+                                f"Connection status error: {response.status}"
                             )
         except (asyncio.TimeoutError, ClientError) as ex:
             await session.close()
@@ -104,7 +104,7 @@ class HttpReaderWriter:
                         else:
                             _log_error(response.status)
         except ClientError:
-            _LOGGER.error("Hub write failure (ClienError)")
+            _LOGGER.error("Hub write failure (ClientError)")
         except asyncio.TimeoutError:
             _LOGGER.error("Hub write failure (TimeoutError)")
 
@@ -122,8 +122,12 @@ class HttpReaderWriter:
         raw_text = html.replace("<response><BS>", "")
         raw_text = raw_text.replace("</BS></response>", "")
         raw_text = raw_text.strip()
-        if raw_text[:199] == "0" * 200:
+        odd_length = len(raw_text) % 2
+        if odd_length:
+            return None
+        if raw_text[:200] == "0" * 200:
             # Likely the buffer was cleared
+            await self.reset_reader()
             return None
         this_stop = int(raw_text[-2:], 16)
         if this_stop > last_stop:
@@ -138,7 +142,7 @@ class HttpReaderWriter:
                 # The buffer was probably reset since the last read
                 buffer_hi = ""
             buffer_low = raw_text[0:this_stop]
-            buffer = "{:s}{:s}".format(buffer_hi, buffer_low)
+            buffer = f"{buffer_hi}{buffer_low}"
         else:
             buffer = None
         await self._set_last_read(this_stop)

@@ -14,8 +14,7 @@ from ..handlers.from_device.on_level import OnLevelInbound
 from ..handlers.from_device.on_level_all_link_cleanup import OnAllLinkCleanupInbound
 from ..subscriber_base import SubscriberBase
 
-TIMEOUT = timedelta(seconds=0.7)
-TIMEOUT_CLEANUP = timedelta(seconds=3)
+TIMEOUT_CLEANUP = timedelta(seconds=25)
 
 
 class OnLevelManager:
@@ -51,16 +50,16 @@ class OnLevelManager:
 
         # Setup event managers that will manange the subscribers to specific events
         self._on = self.Subscriber(
-            "subscriber_{}_on_{}_broadcast".format(self._address.id, self._group)
+            f"subscriber_{self._address.id}_on_{self._group}_broadcast"
         )
         self._off = self.Subscriber(
-            "subscriber_{}_off_{}_broadcast".format(self._address.id, self._group)
+            f"subscriber_{self._address.id}_off_{self._group}_broadcast"
         )
         self._on_fast = self.Subscriber(
-            "subscriber_{}_on_fast_{}_broadcast".format(self._address.id, self._group)
+            f"subscriber_{self._address.id}_on_fast_{self._group}_broadcast"
         )
         self._off_fast = self.Subscriber(
-            "subscriber_{}_off_fast_{}_broadcast".format(self._address.id, self._group)
+            f"subscriber_{self._address.id}_off_fast_{self._group}_broadcast"
         )
 
         # Register the handlers to listen to
